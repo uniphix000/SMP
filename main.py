@@ -52,7 +52,7 @@ def main():
     # 初始化网络
     lstm = LSTMNet(200, 200, lang.word_size, 1)
     lstm = lstm.cuda() if use_cuda else lstm
-    optimizer = optim.Adam(lstm.parameters(), lr=0.001, amsgrad=True) #, lr=args.lr, weight_decay=)
+    optimizer = optim.Adam(lstm.parameters(), lr=0.01, amsgrad=True) #, lr=args.lr, weight_decay=)
 
     # get batch
 
@@ -68,7 +68,7 @@ def main():
             loss.backward()
             optimizer.step()
             total_loss += loss
-            print ('\rnum:%d loss为%3f' %(i,total_loss/(i+1)),end=''),  # TODO cool!
+            print ('\repoch:%d num:%.1f%% loss为%.3f' %(loop, i/len(train_pairs_idx)*100.0 ,total_loss/(i+1)),end=''),  # TODO cool!
             sys.stdout.flush()
 
 
