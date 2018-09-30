@@ -52,7 +52,7 @@ def main():
     # 初始化网络
     lstm = LSTMNet(200, 200, lang.word_size, 1)
     lstm = lstm.cuda() if use_cuda else lstm
-    optimizer = optim.Adam(lstm.parameters(), lr=0.01, amsgrad=True) #, lr=args.lr, weight_decay=)
+    optimizer = optim.Adam(lstm.parameters(), lr=0.0001, amsgrad=True) #, lr=args.lr, weight_decay=)
 
     # get batch
 
