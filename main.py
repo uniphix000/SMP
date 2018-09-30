@@ -14,6 +14,7 @@ import logging
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
 
+use_cuda = torch.cuda.is_available()
 device_cuda = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 logging.info('device:{0}'.format(device_cuda))
 
@@ -50,7 +51,7 @@ def main():
 
     # 初始化网络
     lstm = LSTMNet(200, 200, lang.word_size, 1)
-    lstm = torch.nn.DataParallel(lstm).to(device_cuda)
+    lstm = lstm.cuda() if use_cuda else lstm
     optimizer = optim.Adam(lstm.parameters(), lr=0.001, amsgrad=True) #, lr=args.lr, weight_decay=)
 
     # get batch
