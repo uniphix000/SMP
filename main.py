@@ -11,6 +11,7 @@ from torch import optim
 import json
 import logging
 import os
+import time
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
@@ -85,7 +86,7 @@ def main():
         predict_dict = {}
         for it in train_data:
             predict_dict[it] = {"query": train_data[it]['query'], "label": predict_box[int(it)]}
-        json.dump(predict_dict, open('tmp/predict.json', 'w'), ensure_ascii=False)
+        json.dump(predict_dict, open('tmp/predict.json', 'w'), ensure_ascii=False);time.sleep(3)
         GetEvalResult()
 
 
