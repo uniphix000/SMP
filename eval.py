@@ -88,4 +88,4 @@ if __name__ =='__main__':
     truth_dict = json.load(open(sys.argv[1]), encoding='utf8')
     pred_dict = json.load(open(sys.argv[2]), encoding='utf8')
     acc, _, _, _, Fscore = caculateF(truth_dict, pred_dict)
-    print ('Avg F1 Score: %f Acc: %f' % (Fscore, acc))
+    print ('Avg F1 Score: %f' % Fscore)
