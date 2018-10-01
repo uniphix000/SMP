@@ -90,7 +90,7 @@ def main():
         predict_dict = {}
         for it in train_data:
             predict_dict[it] = {"query": train_data[it]['query'], "label": predict_box[int(it)]}
-        json.dump(predict_dict, open('tmp/predict.json', 'w'), ensure_ascii=False);time.sleep(3)
+        json.dump(predict_dict, open('tmp/predict.json', 'w'), ensure_ascii=False)
         GetEvalResult()
 
 
