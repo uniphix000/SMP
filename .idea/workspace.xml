@@ -3,6 +3,7 @@
   <component name="ChangeListManager">
     <list default="true" id="020087ae-1a7e-4244-9834-4929da764e2d" name="Default" comment="">
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/main.py" afterPath="$PROJECT_DIR$/main.py" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/tmp/predict.json" afterPath="$PROJECT_DIR$/tmp/predict.json" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
     </list>
     <ignored path="SMP.iws" />
