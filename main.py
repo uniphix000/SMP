@@ -31,12 +31,10 @@ idx2label = {i:label for (label, i) in label2idx.items()}
 
 def main():
     # 载入训练数据
-    train_data = json.load(open('raw_data/train.json'), encoding='utf8');print (train_data)
-    train_data = {item[0]:item[1] for item in sorted(train_data.items(),key=operator.itemgetter(0))}
-    print ('train_data',train_data)
-    print (len(train_data))
+    train_data = json.load(open('raw_data/train.json'), encoding='utf8')
+    train_data_size = len(train_data)
+    data_idx = [str(i) for i in range(train_data_size)]
     train_pairs = []  # [['今天东莞天气如何', 'weather'],...]
-    print ('train_pairs',train_pairs)
     train_querys = []
     with open('data/train_query', 'r', encoding='utf8') as ft:
         train_query = ft.readlines()  # 已经分过词
@@ -45,8 +43,8 @@ def main():
         train_querys.append(query.strip().split('\t'))
     lang = Lang('zh-cn')  # 词典
 
-    for (query, item) in zip(train_querys, train_data):
-        train_pairs.append([query, train_data[item]['label']])  # train_pairs:[[['今天', '东莞', '天气', '如何'], 'weather'], ...
+    for (query, idx) in zip(train_querys, data_idx):
+        train_pairs.append([query, train_data[idx]['label']])  # train_pairs:[[['今天', '东莞', '天气', '如何'], 'weather'], ...
         lang.addSentence(query)
     logging.info('load data! #training data pairs:{0}'.format(len(train_pairs)))
     logging.info('dict generated! dict size:{0}'.format(lang.word_size))
