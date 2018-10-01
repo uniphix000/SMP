@@ -30,6 +30,7 @@ idx2label = {i:label for (label, i) in label2idx.items()}
 def main():
     # 载入训练数据
     train_data = json.load(open('raw_data/train.json'), encoding='utf8')
+    print (len(train_data))
     train_pairs = []  # [['今天东莞天气如何', 'weather'],...]
     train_querys = []
     with open('data/train_query', 'r', encoding='utf8') as ft:
@@ -54,7 +55,7 @@ def main():
     # 初始化网络
     lstm = LSTMNet(200, 200, lang.word_size, 1)
     lstm = lstm.cuda() if use_cuda else lstm
-    optimizer = optim.Adam(lstm.parameters(), lr=0.0001, amsgrad=True) #, lr=args.lr, weight_decay=)
+    optimizer = optim.Adam(lstm.parameters(), lr=0.00001, amsgrad=True) #, lr=args.lr, weight_decay=)
 
     # get batch
 
@@ -105,15 +106,23 @@ class LSTMNet(nn.Module):
         self.num_layers = num_layers
         self.embedding = nn.Embedding(vocab_size, embed_size, padding_idx=0)  #.from_pretrained(embed, freeze=False)
         self.lstm = nn.LSTM(embed_size, hidden_size // 2, num_layers=self.num_layers, batch_first=True,
-                                bidirectional=True, dropout=self.dropout)
+                                bidirectional=True)  # , dropout=self.dropout)
         self.linear = nn.Linear(hidden_size, label_size)
-        self.softmax = nn.LogSoftmax()
+        self.softmax = nn.LogSoftmax(dim=1)
         self.loss = nn.NLLLoss()
+        self.attn = nn.Sequential(
+            nn.Linear(self.hidden_size, self.embed_size),
+            nn.Tanh(),
+            nn.Linear(self.embed_size, self.embed_size),
+            nn.Tanh(),
+            nn.Linear(self.embed_size, 1)
+        )
 
     def forward(self, input, labels=None):
         input = self.embedding(input).unsqueeze(0)
-        h_t, _ = self.lstm(input)
-        y_t = self.softmax(self.linear(h_t[:,-1,:]))
+        h_t, _ = self.lstm(input)  # (b_s, m_l, h_s)
+        h_t_ = torch.sum(h_t, dim=1) / h_t.size()[1]
+        y_t = self.softmax(self.linear(h_t_))
 
         if self.training:
             loss = self.loss(y_t, labels.unsqueeze(0))
