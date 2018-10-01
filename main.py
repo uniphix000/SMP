@@ -61,7 +61,7 @@ def main():
 
 
     # train
-    for loop in range(10):
+    for loop in range(30):
         total_loss = 0.0
         lstm.train()
         for i in range(len(train_pairs_idx)):
