@@ -31,30 +31,40 @@ idx2label = {i:label for (label, i) in label2idx.items()}
 
 def main():
     # 载入训练数据
-    train_data = json.load(open('raw_data/train.json'), encoding='utf8')
-    train_data_size = len(train_data)
-    data_idx = [str(i) for i in range(train_data_size)]
-    train_pairs = []  # [['今天东莞天气如何', 'weather'],...]
-    train_querys = []
+    train_data, dev_data = json.load(open('raw_data/train.json'), encoding='utf8'), \
+                           json.load(open('raw_data/dev.json'), encoding='utf8')
+    train_data_size, dev_data_size = len(train_data), len(dev_data)
+    train_data_idx, dev_data_idx = [str(i) for i in range(train_data_size)], \
+                                   [str(i) for i in range(dev_data_size)]
+    train_pairs, dev_pairs = [], []   # [['今天东莞天气如何', 'weather'],...]
+    train_querys, dev_querys = [], []
     with open('data/train_query', 'r', encoding='utf8') as ft:
         train_query = ft.readlines()  # 已经分过词
+    with open('data/train_query', 'r', encoding='utf8') as ft:
+        dev_query = ft.readlines()  # 已经分过词
     #
     for query in train_query:
         train_querys.append(query.strip().split('\t'))
+    for query in dev_query:
+        dev_querys.append(query.strip().split('\t'))
     lang = Lang('zh-cn')  # 词典
 
-    for (query, idx) in zip(train_querys, data_idx):
+    for (query, idx) in zip(train_querys, train_data_idx):
         train_pairs.append([query, train_data[idx]['label']])  # train_pairs:[[['今天', '东莞', '天气', '如何'], 'weather'], ...
         lang.addSentence(query)
-    logging.info('load data! #training data pairs:{0}'.format(len(train_pairs)))
+    for (query, idx) in zip(dev_querys, dev_data_idx):
+        dev_pairs.append([query, dev_data[idx]['label']])
+    logging.info('load data! #training data pairs:{0} dev:{1}'.format(len(train_pairs), len(dev_pairs)))
     logging.info('dict generated! dict size:{0}'.format(lang.word_size))
 
     # word2idx
-    train_pairs_idx = []
+    train_pairs_idx, dev_pairs_idx = [], []
     for (query, label) in train_pairs:
         query_idx = [lang.word2index.get(word, 1) for word in query]
         train_pairs_idx.append([query_idx, label2idx[label]])  # [[[2, 3, 4, 5], 6], [[6, 7, 8, 9, 10, 11, 12], 20],...
-
+    for (query, label) in dev_pairs:
+        query_idx = [lang.word2index.get(word, 1) for word in query]
+        dev_pairs_idx.append([query_idx, label2idx[label]])
     # 初始化网络
     lstm = LSTMNet(200, 200, lang.word_size, 1)
     lstm = lstm.cuda() if use_cuda else lstm
@@ -81,13 +91,13 @@ def main():
         # eval 改用开发集
         predict_box = []
         lstm.eval()
-        for i in range(len(train_pairs_idx)):
-            input_tensor = torch.tensor(train_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
+        for i in range(len(dev_pairs_idx)):
+            input_tensor = torch.tensor(dev_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
             predict_label = lstm.forward(input_tensor, )
             predict_box.append(idx2label[predict_label.item()])  # 收纳预测结果
         predict_dict = {}
-        for it in train_data:
-            predict_dict[it] = {"query": train_data[it]['query'], "label": predict_box[int(it)]}
+        for it in dev_data:
+            predict_dict[it] = {"query": dev_data[it]['query'], "label": predict_box[int(it)]}
         json.dump(predict_dict, open('tmp/predict.json', 'w'), ensure_ascii=False)
         GetEvalResult()
 
@@ -174,7 +184,7 @@ class Lang:
 
 
 def GetEvalResult():
-    p = os.popen('python eval.py raw_data/train.json tmp/predict.json').read()
+    p = os.popen('python eval.py raw_data/dev.json tmp/predict.json').read()
     print (p)
 
 
