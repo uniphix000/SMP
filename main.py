@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import time
+import operator
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
@@ -30,9 +31,12 @@ idx2label = {i:label for (label, i) in label2idx.items()}
 
 def main():
     # 载入训练数据
-    train_data = json.load(open('raw_data/train.json'), encoding='utf8')
+    train_data = json.load(open('raw_data/train.json'), encoding='utf8');print (train_data)
+    train_data = {item[0]:item[1] for item in sorted(train_data.items(),key=operator.itemgetter(0))}
+    print ('train_data',train_data)
     print (len(train_data))
     train_pairs = []  # [['今天东莞天气如何', 'weather'],...]
+    print ('train_pairs',train_pairs)
     train_querys = []
     with open('data/train_query', 'r', encoding='utf8') as ft:
         train_query = ft.readlines()  # 已经分过词
