@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torch import optim
 import json
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
@@ -23,7 +24,8 @@ labels = ['website', 'tvchannel', 'lottery', 'chat', 'match',
           'calc', 'telephone', 'health', 'contacts', 'epg', 'app', 'music',
           'cookbook', 'stock', 'map', 'message', 'poetry', 'cinemas', 'news',
           'flight', 'translation', 'train', 'schedule', 'radio', 'email']  # 31
-labelsidx = {label:i for (label, i) in zip(labels, range(len(labels)))}
+label2idx = {label:i for (label, i) in zip(labels, range(len(labels)))}
+idx2label = {i:label for (label, i) in label2idx.items()}
 
 def main():
     # 载入训练数据
@@ -47,7 +49,7 @@ def main():
     train_pairs_idx = []
     for (query, label) in train_pairs:
         query_idx = [lang.word2index.get(word, 1) for word in query]
-        train_pairs_idx.append([query_idx, labelsidx[label]])  # [[[2, 3, 4, 5], 6], [[6, 7, 8, 9, 10, 11, 12], 20],...
+        train_pairs_idx.append([query_idx, label2idx[label]])  # [[[2, 3, 4, 5], 6], [[6, 7, 8, 9, 10, 11, 12], 20],...
 
     # 初始化网络
     lstm = LSTMNet(200, 200, lang.word_size, 1)
@@ -60,16 +62,33 @@ def main():
     # train
     for loop in range(10):
         total_loss = 0.0
-        for i in range(len(train_pairs_idx)):
-            lstm.train()
+        lstm.train()
+        for i in range(len(train_pairs_idx)//100):
+            # train
             input_tensor = torch.tensor(train_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
             label_tensor = torch.tensor(train_pairs_idx[i][1], dtype=torch.long, device=device_cuda)
             loss = lstm.forward(input_tensor, label_tensor)
             loss.backward()
             optimizer.step()
             total_loss += loss
-            print ('\repoch:%d num:%.1f%% loss为%.3f' %(loop, i/len(train_pairs_idx)*100.0 ,total_loss/(i+1)),end=''),  # TODO cool!
+            print ('\repoch:%d num:%.1f%% loss为%.3f ' %(loop, i/len(train_pairs_idx)*100.0 ,total_loss/(i+1)),end=''),  # TODO cool!
             sys.stdout.flush()
+
+        # eval 改用开发集
+        predict_box = []
+        lstm.eval()
+        for i in range(len(train_pairs_idx)):
+            input_tensor = torch.tensor(train_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
+            predict_label = lstm.forward(input_tensor, )
+            predict_box.append(idx2label[predict_label.item()])  # 收纳预测结果
+        predict_dict = {}
+        for it in train_data:
+            predict_dict[it] = {"query": train_data[it]['query'], "label": predict_box[int(it)]}
+        json.dump(predict_dict, open('tmp/predict.json', 'w'), ensure_ascii=False)
+        GetEvalResult()
+
+
+
 
 
 
@@ -91,12 +110,17 @@ class LSTMNet(nn.Module):
         self.softmax = nn.LogSoftmax()
         self.loss = nn.NLLLoss()
 
-    def forward(self, input, labels):
+    def forward(self, input, labels=None):
         input = self.embedding(input).unsqueeze(0)
         h_t, _ = self.lstm(input)
-        predict_label = self.softmax(self.linear(h_t[:,-1,:]))
-        loss = self.loss(predict_label, labels.unsqueeze(0))
-        return loss
+        y_t = self.softmax(self.linear(h_t[:,-1,:]))
+
+        if self.training:
+            loss = self.loss(y_t, labels.unsqueeze(0))
+            return loss
+        elif self.eval:
+            _, predict_label = torch.max(y_t, 1)
+            return predict_label
 
 
 
@@ -137,6 +161,9 @@ class Lang:
         self.n_words_for_decoder = self.word_size
 
 
+def GetEvalResult():
+    p = os.popen('python eval.py raw_data/train.json tmp/predict.json').read()
+    print (p)
 
 
 
