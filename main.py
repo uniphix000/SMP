@@ -63,7 +63,7 @@ def main():
     for loop in range(10):
         total_loss = 0.0
         lstm.train()
-        for i in range(len(train_pairs_idx)//100):
+        for i in range(len(train_pairs_idx)):
             # train
             input_tensor = torch.tensor(train_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
             label_tensor = torch.tensor(train_pairs_idx[i][1], dtype=torch.long, device=device_cuda)
