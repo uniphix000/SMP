@@ -40,7 +40,7 @@ def main():
     train_querys, dev_querys = [], []
     with open('data/train_query', 'r', encoding='utf8') as ft:
         train_query = ft.readlines()  # 已经分过词
-    with open('data/train_query', 'r', encoding='utf8') as ft:
+    with open('data/dev_query', 'r', encoding='utf8') as ft:
         dev_query = ft.readlines()  # 已经分过词
     #
     for query in train_query:
