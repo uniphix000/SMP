@@ -16,7 +16,7 @@ import operator
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
-
+torch.manual_seed(1234)
 use_cuda = torch.cuda.is_available()
 device_cuda = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 logging.info('device:{0}'.format(device_cuda))
@@ -134,8 +134,8 @@ class LSTMNet(nn.Module):
     def forward(self, input, labels=None):
         input = self.embedding(input).unsqueeze(0)
         h_t, _ = self.lstm(input)  # (b_s, m_l, h_s)
-        h_t_ = torch.sum(h_t, dim=1) / h_t.size()[1]
-        y_t = self.softmax(self.linear(h_t_))
+        #h_t_ = torch.sum(h_t, dim=1) / h_t.size()[1]
+        y_t = self.softmax(self.linear(h_t[:,-1,:]))
 
         if self.training:
             loss = self.loss(y_t, labels.unsqueeze(0))
