@@ -134,8 +134,8 @@ class LSTMNet(nn.Module):
     def forward(self, input, labels=None):
         input = self.embedding(input).unsqueeze(0)
         h_t, _ = self.lstm(input)  # (b_s, m_l, h_s)
-        #h_t_ = torch.sum(h_t, dim=1) / h_t.size()[1]
-        y_t = self.softmax(self.linear(h_t[:,-1,:]))
+        h_t_ = torch.sum(h_t, dim=1) / h_t.size()[1]
+        y_t = self.softmax(self.linear(h_t_))
 
         if self.training:
             loss = self.loss(y_t, labels.unsqueeze(0))
