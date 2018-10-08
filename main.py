@@ -16,7 +16,7 @@ import operator
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
-torch.manual_seed(1234)
+torch.manual_seed(1)
 use_cuda = torch.cuda.is_available()
 device_cuda = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 logging.info('device:{0}'.format(device_cuda))
@@ -29,19 +29,18 @@ labels = ['website', 'tvchannel', 'lottery', 'chat', 'match',
 label2idx = {label:i for (label, i) in zip(labels, range(len(labels)))}
 idx2label = {i:label for (label, i) in label2idx.items()}
 
-def main():
+def main(run_type='train', run_place='local'):
     # 载入训练数据
-    train_data, dev_data = json.load(open('raw_data/train.json'), encoding='utf8'), \
-                           json.load(open('raw_data/dev.json'), encoding='utf8')
+    #
+    train_data, dev_data = json.load(open('train.json'), encoding='utf8'), \
+                           json.load(open('dev.json'), encoding='utf8')
     train_data_size, dev_data_size = len(train_data), len(dev_data)
     train_data_idx, dev_data_idx = [str(i) for i in range(train_data_size)], \
                                    [str(i) for i in range(dev_data_size)]
     train_pairs, dev_pairs = [], []   # [['今天东莞天气如何', 'weather'],...]
     train_querys, dev_querys = [], []
-    with open('data/train_query', 'r', encoding='utf8') as ft:
-        train_query = ft.readlines()  # 已经分过词
-    with open('data/dev_query', 'r', encoding='utf8') as ft:
-        dev_query = ft.readlines()  # 已经分过词
+    train_query, dev_query = tokenize(train_data, run_place), tokenize(dev_data, run_place)
+
     #
     for query in train_query:
         train_querys.append(query.strip().split('\t'))
@@ -71,24 +70,45 @@ def main():
     optimizer = optim.Adam(lstm.parameters(), lr=0.00001, amsgrad=True) #, lr=args.lr, weight_decay=)
 
     # get batch
+    if (run_type == 'train'):
+        # train
+        best_f_score = 0.0
+        for loop in range(30):
+            total_loss = 0.0
+            lstm.train()
+            for i in range(len(train_pairs_idx)):
+                # train
+                input_tensor = torch.tensor(train_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
+                label_tensor = torch.tensor(train_pairs_idx[i][1], dtype=torch.long, device=device_cuda)
+                loss = lstm.forward(input_tensor, label_tensor)
+                loss.backward()
+                optimizer.step()
+                total_loss += loss
+                print ('\repoch:%d num:%.1f%% loss为%.3f ' %(loop, i/len(train_pairs_idx)*100.0 ,total_loss/(i+1)),end=''),  # TODO cool!
+                sys.stdout.flush()
 
+            # eval 改用开发集
+            predict_box = []
+            lstm.eval()
+            for i in range(len(dev_pairs_idx)):
+                input_tensor = torch.tensor(dev_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
+                predict_label = lstm.forward(input_tensor, )
+                predict_box.append(idx2label[predict_label.item()])  # 收纳预测结果
+            predict_dict = {}
+            for it in dev_data:
+                predict_dict[it] = {"query": dev_data[it]['query'], "label": predict_box[int(it)]}
+            json.dump(predict_dict, open('predict_tmp.json', 'w'), ensure_ascii=False)
+            f_score = GetEvalResult()
+            if (f_score > best_f_score):
+                print ('new record!')
+                best_f_score = f_score
+                json.dump(predict_dict, open('predict.json', 'w'), ensure_ascii=False)
+                torch.save(lstm.state_dict(), 'model')
+                print ('new model saved.')
+            print ('best score ever:{0}'.format(best_f_score))
 
-    # train
-    for loop in range(30):
-        total_loss = 0.0
-        lstm.train()
-        for i in range(len(train_pairs_idx)):
-            # train
-            input_tensor = torch.tensor(train_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
-            label_tensor = torch.tensor(train_pairs_idx[i][1], dtype=torch.long, device=device_cuda)
-            loss = lstm.forward(input_tensor, label_tensor)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss
-            print ('\repoch:%d num:%.1f%% loss为%.3f ' %(loop, i/len(train_pairs_idx)*100.0 ,total_loss/(i+1)),end=''),  # TODO cool!
-            sys.stdout.flush()
-
-        # eval 改用开发集
+    elif (run_type=='eval'):
+        lstm.load_state_dict(torch.load('model'))
         predict_box = []
         lstm.eval()
         for i in range(len(dev_pairs_idx)):
@@ -98,8 +118,13 @@ def main():
         predict_dict = {}
         for it in dev_data:
             predict_dict[it] = {"query": dev_data[it]['query'], "label": predict_box[int(it)]}
-        json.dump(predict_dict, open('tmp/predict.json', 'w'), ensure_ascii=False)
+        json.dump(predict_dict, open('predict_tmp.json', 'w'), ensure_ascii=False)
         GetEvalResult()
+
+
+
+
+
 
 
 
@@ -184,10 +209,41 @@ class Lang:
 
 
 def GetEvalResult():
-    p = os.popen('python eval.py raw_data/dev.json tmp/predict.json').read()
+    p = os.popen('python eval.py dev.json predict_tmp.json').read()
     print (p)
+    if len(p)<37:
+        return 0
+    elif len(p)==37:
+        return float(p.split()[3])
 
+
+def tokenize(data_dict, run_place):
+    '''
+    convert json file-->querys file-->toeknized querys file
+    :param data:
+    :return:
+    '''
+    data = ''
+    for i in range(len(data_dict)):# item in data:
+        query = data_dict[str(i)]['query']
+        data = data  + query + '\n'
+    with open('to_be_tokenized.txt', 'w', encoding='utf8' ) as f:
+        f.write(data)
+        f.close()
+    if (run_place=='local'):
+        p = os.popen('/home/uniphix/ltp-3.4.0/bin/examples/cws_cmdline --input=\'to_be_tokenized.txt\' \
+                    --segmentor-model=\'/home/uniphix/ltp_data_v3.4.0/cws.model\' > tokenized.txt').readlines()
+    elif (run_place=='coda'):
+        p = os.popen('/bin/ltp-3.4.0/bin/examples/cws_cmdline --input=\'to_be_tokenized.txt\' \
+                    --segmentor-model=\'/bin/ltp_data_v3.4.0/cws.model\' > tokenized.txt').readlines()
+    elif (run_place=='hpc'):
+        p = os.popen('/bin/ltp-3.4.0/bin/examples/cws_cmdline --input=\'to_be_tokenized.txt\' \
+                    --segmentor-model=\'/bin/ltp_data_v3.4.0/cws.model\' > tokenized.txt').readlines()
+    with open('tokenized.txt', 'r', encoding='utf8') as ft:
+        query = ft.readlines()  # 已经分过词
+    return query
 
 
 if __name__ == '__main__':
-    main()
+    run_type, run_place = sys.argv[1], sys.argv[2]
+    main(run_type, run_place)
