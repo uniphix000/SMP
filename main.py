@@ -13,6 +13,8 @@ import logging
 import os
 import time
 import operator
+import numpy as np
+import pickle
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
@@ -39,7 +41,7 @@ def main(run_type='train', run_place='local'):
                                    [str(i) for i in range(dev_data_size)]
     train_pairs, dev_pairs = [], []   # [['今天东莞天气如何', 'weather'],...]
     train_querys, dev_querys = [], []
-    train_query, dev_query = tokenize(train_data, run_place), tokenize(dev_data, run_place)
+    train_query, dev_query = tokenize(train_data, run_place, 'train'), tokenize(dev_data, run_place, 'dev')
 
     #
     for query in train_query:
@@ -65,9 +67,10 @@ def main(run_type='train', run_place='local'):
         query_idx = [lang.word2index.get(word, 1) for word in query]
         dev_pairs_idx.append([query_idx, label2idx[label]])
     # 初始化网络
-    lstm = LSTMNet(200, 200, lang.word_size, 1)
+    lstm = LSTMNet(300, 300, lang)
     lstm = lstm.cuda() if use_cuda else lstm
-    optimizer = optim.Adam(lstm.parameters(), lr=0.00001, amsgrad=True) #, lr=args.lr, weight_decay=)
+    optimizer = optim.Adam(filter(lambda x: x.requires_grad, lstm.parameters()),\
+            lr=0.00001, amsgrad=True) #, lr=args.lr, weight_decay=)
 
     # get batch
     if (run_type == 'train'):
@@ -120,6 +123,8 @@ def main(run_type='train', run_place='local'):
             predict_dict[it] = {"query": dev_data[it]['query'], "label": predict_box[int(it)]}
         json.dump(predict_dict, open('predict_tmp.json', 'w'), ensure_ascii=False)
         GetEvalResult()
+    else:
+        raise Exception('run_type error')
 
 
 
@@ -133,23 +138,24 @@ def main(run_type='train', run_place='local'):
 
 
 class LSTMNet(nn.Module):
-    def __init__(self, embed_size, hidden_size, vocab_size, batch_size, num_layers=1, label_size=31, dropout=0.5,):
+    def __init__(self, embed_size, hidden_size, lang, batch_size=1, num_layers=1, label_size=31, dropout=0.5,):
         super(LSTMNet, self).__init__()
         self.embed_size = embed_size
         self.hidden_size = hidden_size
-        self.vocab_size = vocab_size
+        self.vocab_size = lang.word_size
         self.batch_size = batch_size
         self.label_size = label_size
         self.dropout = dropout
         self.num_layers = num_layers
-        self.embedding = nn.Embedding(vocab_size, embed_size, padding_idx=0)  #.from_pretrained(embed, freeze=False)
+
+        self.embedding = self._init_embedding(lang, embed_size)
         self.lstm = nn.LSTM(embed_size, hidden_size // 2, num_layers=self.num_layers, batch_first=True,
-                                bidirectional=True)  # , dropout=self.dropout)
+                                bidirectional=True)#, dropout=self.dropout)
         self.linear = nn.Linear(hidden_size, label_size)
         self.softmax = nn.LogSoftmax(dim=1)
         self.loss = nn.NLLLoss()
         self.attn = nn.Sequential(
-            nn.Linear(self.hidden_size, self.embed_size),
+            nn.Linear(self.hidden_size * 2, self.embed_size),
             nn.Tanh(),
             nn.Linear(self.embed_size, self.embed_size),
             nn.Tanh(),
@@ -160,7 +166,15 @@ class LSTMNet(nn.Module):
         input = self.embedding(input).unsqueeze(0)
         h_t, _ = self.lstm(input)  # (b_s, m_l, h_s)
         h_t_ = torch.sum(h_t, dim=1) / h_t.size()[1]
+        # h_t_ = h_t[:,-1,:].squeeze(1)  # 仅用最后的向量
         y_t = self.softmax(self.linear(h_t_))
+
+        # context = torch.rand([1,1,300], device=device_cuda)  # 初始化零向量 0.268
+        # context_extend = torch.cat([context] * h_t.size()[1], dim=1)  # (b_s, m_l, h_s)
+        # score = self.attn(torch.cat((h_t, context_extend), dim=2))  # (b_s, m_l, 1)
+        # attn = self.softmax(score.squeeze(2)).unsqueeze(2)
+        # h_t_ = torch.sum(h_t * attn, dim=1)
+        # y_t = self.softmax(self.linear(h_t_))
 
         if self.training:
             loss = self.loss(y_t, labels.unsqueeze(0))
@@ -170,7 +184,43 @@ class LSTMNet(nn.Module):
             return predict_label
 
 
+    def _init_embedding(self, lang, embed_size):
+        if os.path.exists('pretrained'):
+            print ('use pretrained embedding...')
+            t = open('pretrained', 'rb')
+            embeddings = pickle.load(t)
+            t.close()
+            return nn.Embedding.from_pretrained(torch.tensor(embeddings, device=device_cuda), freeze=True)
+        else:
+            if os.path.isfile('sgns_merge'):
+                print("Loading pretrained embeddings...")
+                start = time.time()
 
+                def get_coefs(word, *arr):
+                    return word, np.asarray(arr, dtype=np.float32)
+
+                embeddings_dict = dict(get_coefs(*o.rstrip().rsplit(' ')) for o in open('sgns_merge', encoding='utf-8') if
+                                       len(o.rstrip().rsplit(' ')) != 2)
+                print (len(embeddings_dict))
+
+                # print 'no pretrained: '
+                embeddings = np.random.randn(lang.word_size, embed_size).astype(np.float32)
+                for word, i in lang.word2index.items():
+                    embedding_vector = embeddings_dict.get(word)
+                    if embedding_vector is not None:
+                        embeddings[i] = embedding_vector
+                        print('in: ', word)
+                    else:
+                        print('out: ', word)
+                print("took {:.2f} seconds\n".format(time.time() - start))
+
+                t = open('pretrained', 'wb')
+                pickle.dump(embeddings, t)
+                t.close()
+                return nn.Embedding.from_pretrained(torch.tensor(embeddings, device=device_cuda))
+            else:
+                print ('no pretrained embedding used...')
+                return nn.Embedding(lang.word_size, embed_size)
 
 
 
@@ -217,31 +267,35 @@ def GetEvalResult():
         return float(p.split()[3])
 
 
-def tokenize(data_dict, run_place):
+def tokenize(data_dict, run_place, data_type='train'):
     '''
+    这里local和coda可以依靠ltp分词而hpc上只能上传分词文件
     convert json file-->querys file-->toeknized querys file
     :param data:
     :return:
     '''
-    data = ''
-    for i in range(len(data_dict)):# item in data:
-        query = data_dict[str(i)]['query']
-        data = data  + query + '\n'
-    with open('to_be_tokenized.txt', 'w', encoding='utf8' ) as f:
-        f.write(data)
-        f.close()
-    if (run_place=='local'):
+    if (run_place == 'local') | (run_place=='coda'):
+        data = ''
+        for i in range(len(data_dict)):  # item in data:
+            query = data_dict[str(i)]['query']
+            data = data + query + '\n'
+        with open('to_be_tokenized.txt', 'w', encoding='utf8' ) as f:
+            f.write(data)
+            f.close()
         p = os.popen('/home/uniphix/ltp-3.4.0/bin/examples/cws_cmdline --input=\'to_be_tokenized.txt\' \
-                    --segmentor-model=\'/home/uniphix/ltp_data_v3.4.0/cws.model\' > tokenized.txt').readlines()
-    elif (run_place=='coda'):
-        p = os.popen('/bin/ltp-3.4.0/bin/examples/cws_cmdline --input=\'to_be_tokenized.txt\' \
-                    --segmentor-model=\'/bin/ltp_data_v3.4.0/cws.model\' > tokenized.txt').readlines()
+                    --segmentor-model=\'/home/uniphix/ltp_data_v3.4.0/cws.model\' > tokenized.txt').readlines() \
+            if run_place == 'local' else \
+            os.popen('/bin/ltp-3.4.0/bin/examples/cws_cmdline --input=\'to_be_tokenized.txt\' \
+                            --segmentor-model=\'/bin/ltp_data_v3.4.0/cws.model\' > tokenized.txt').readlines()
+        with open('tokenized.txt', 'r', encoding='utf8') as ft:
+            query = ft.readlines()  # 已经分过词
+        return query
     elif (run_place=='hpc'):
-        p = os.popen('/bin/ltp-3.4.0/bin/examples/cws_cmdline --input=\'to_be_tokenized.txt\' \
-                    --segmentor-model=\'/bin/ltp_data_v3.4.0/cws.model\' > tokenized.txt').readlines()
-    with open('tokenized.txt', 'r', encoding='utf8') as ft:
-        query = ft.readlines()  # 已经分过词
-    return query
+        with open('data/'+data_type + '_tokenized.txt', 'r', encoding='utf8') as ft:
+            querys = ft.readlines()  # 已经分过词
+        return querys
+
+
 
 
 if __name__ == '__main__':
