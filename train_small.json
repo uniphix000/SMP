@@ -1,0 +1,82 @@
+{
+  "0": {
+    "query": "今天东莞天气如何",
+    "label": "weather"
+  },
+  "1": {
+    "query": "从观音桥到重庆市图书馆怎么走",
+    "label": "map"
+  },
+  "2": {
+    "query": "鸭蛋怎么腌？",
+    "label": "cookbook"
+  },
+  "3": {
+    "query": "怎么治疗牛皮癣",
+    "label": "health"
+  },
+  "4": {
+    "query": "唠什么",
+    "label": "chat"
+  },
+  "5": {
+    "query": "阳澄湖大闸蟹的做法。",
+    "label": "cookbook"
+  },
+  "6": {
+    "query": "昆山大润发在哪里",
+    "label": "map"
+  },
+  "7": {
+    "query": "红烧肉怎么做？嗯？",
+    "label": "cookbook"
+  },
+  "8": {
+    "query": "南京到厦门的火车票",
+    "label": "train"
+  },
+  "9": {
+    "query": "6的平方",
+    "label": "calc"
+  },
+  "10": {
+    "query": "翻译慷慨激昂",
+    "label": "translation"
+  },
+  "11": {
+    "query": "放歌，天亮了。",
+    "label": "music"
+  },
+  "12": {
+    "query": "女性时尚",
+    "label": "tvchannel"
+  },
+  "13": {
+    "query": "查一下南昌到南京的火车",
+    "label": "train"
+  },
+  "14": {
+    "query": "背首绝句的。",
+    "label": "poetry"
+  },
+  "15": {
+    "query": "我帮妈妈洗什么",
+    "label": "chat"
+  },
+  "16": {
+    "query": "打电话给王宇婕",
+    "label": "telephone"
+  },
+  "17": {
+    "query": "零零二三零六的股票",
+    "label": "stock"
+  },
+  "18": {
+    "query": "调频fm九十七点一",
+    "label": "radio"
+  },
+  "19": {
+    "query": "把王世怀的号码发给乔丽君",
+    "label": "contacts"
+  }
+}

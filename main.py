@@ -15,6 +15,16 @@ import time
 import operator
 import numpy as np
 import pickle
+import collections
+import jieba
+
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
+
+from pytorch_pretrained_bert.tokenization import BertTokenizer
+from pytorch_pretrained_bert.modeling import BertForSequenceClassification
+from pytorch_pretrained_bert.optimization import BertAdam
+from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)-15s %(levelname)s: %(message)s')
@@ -28,14 +38,26 @@ labels = ['website', 'tvchannel', 'lottery', 'chat', 'match',
           'calc', 'telephone', 'health', 'contacts', 'epg', 'app', 'music',
           'cookbook', 'stock', 'map', 'message', 'poetry', 'cinemas', 'news',
           'flight', 'translation', 'train', 'schedule', 'radio', 'email']  # 31
+#        [['网站'], ['电视台','电视','频道','节目'], ['彩票','中奖','获奖','奖'], ['聊天','闲聊','闲谈'], ['比赛'],
+#           '日期', '天气', '公交', '小说', '视频', '谜语',
+#           '计算', '电话', '健康', '联系', '电子节目指南', '应用程序', '音乐',
+#           '烹饪', '股票', '地图', '短信', '诗歌', '电影院', '新闻',
+#           '航班', '翻译', '火车', '安排', '电台', '电子邮件']
+
+# with open('stopword', 'r', encoding='utf8') as f:
+#     stopword = f.readlines()
+#     stopword = [word.strip() for word in stopword]
+
 label2idx = {label:i for (label, i) in zip(labels, range(len(labels)))}
 idx2label = {i:label for (label, i) in label2idx.items()}
 
 def main(run_type='train', run_place='local'):
     # 载入训练数据
     #
-    train_data, dev_data = json.load(open('train.json'), encoding='utf8'), \
-                           json.load(open('dev.json'), encoding='utf8')
+    train_data, dev_data = json.load(open('train.json'), encoding='utf8', \
+                                     object_pairs_hook=collections.OrderedDict), \
+                           json.load(open('dev.json'), encoding='utf8', \
+                                     object_pairs_hook=collections.OrderedDict)
     train_data_size, dev_data_size = len(train_data), len(dev_data)
     train_data_idx, dev_data_idx = [str(i) for i in range(train_data_size)], \
                                    [str(i) for i in range(dev_data_size)]
@@ -55,8 +77,10 @@ def main(run_type='train', run_place='local'):
         lang.addSentence(query)
     for (query, idx) in zip(dev_querys, dev_data_idx):
         dev_pairs.append([query, dev_data[idx]['label']])
+        lang.addSentence(query)
+
     logging.info('load data! #training data pairs:{0} dev:{1}'.format(len(train_pairs), len(dev_pairs)))
-    logging.info('dict generated! dict size:{0}'.format(lang.word_size))
+    #logging.info('dict generated! dict size:{0}'.format(lang.word_size))
 
     # word2idx
     train_pairs_idx, dev_pairs_idx = [], []
@@ -70,7 +94,7 @@ def main(run_type='train', run_place='local'):
     lstm = LSTMNet(300, 300, lang)
     lstm = lstm.cuda() if use_cuda else lstm
     optimizer = optim.Adam(filter(lambda x: x.requires_grad, lstm.parameters()),\
-            lr=0.00001, amsgrad=True) #, lr=args.lr, weight_decay=)
+            lr=0.00001)#, weight_decay=0.0001)#amsgrad=True) #, lr=args.lr, weight_decay=)
 
     # get batch
     if (run_type == 'train'):
@@ -83,7 +107,7 @@ def main(run_type='train', run_place='local'):
                 # train
                 input_tensor = torch.tensor(train_pairs_idx[i][0], dtype=torch.long, device=device_cuda)
                 label_tensor = torch.tensor(train_pairs_idx[i][1], dtype=torch.long, device=device_cuda)
-                loss = lstm.forward(input_tensor, label_tensor)
+                loss = lstm.forward(input_tensor, labellabel_tensor)
                 loss.backward()
                 optimizer.step()
                 total_loss += loss
@@ -100,12 +124,14 @@ def main(run_type='train', run_place='local'):
             predict_dict = {}
             for it in dev_data:
                 predict_dict[it] = {"query": dev_data[it]['query'], "label": predict_box[int(it)]}
-            json.dump(predict_dict, open('predict_tmp.json', 'w'), ensure_ascii=False)
+            json.dump(predict_dict, open('predict_tmp.json', 'w'), ensure_ascii=False, \
+                      sort_keys=True)
             f_score = GetEvalResult()
             if (f_score > best_f_score):
                 print ('new record!')
                 best_f_score = f_score
-                json.dump(predict_dict, open('predict.json', 'w'), ensure_ascii=False)
+                json.dump(predict_dict, open('predict.json', 'w'), ensure_ascii=False, \
+                          sort_keys=True)
                 torch.save(lstm.state_dict(), 'model')
                 print ('new model saved.')
             print ('best score ever:{0}'.format(best_f_score))
@@ -121,20 +147,11 @@ def main(run_type='train', run_place='local'):
         predict_dict = {}
         for it in dev_data:
             predict_dict[it] = {"query": dev_data[it]['query'], "label": predict_box[int(it)]}
-        json.dump(predict_dict, open('predict_tmp.json', 'w'), ensure_ascii=False)
+        json.dump(predict_dict, open('predict_tmp.json', 'w'), ensure_ascii=False, \
+                  sort_keys=True)
         GetEvalResult()
     else:
         raise Exception('run_type error')
-
-
-
-
-
-
-
-
-
-
 
 
 class LSTMNet(nn.Module):
@@ -148,10 +165,12 @@ class LSTMNet(nn.Module):
         self.dropout = dropout
         self.num_layers = num_layers
 
-        self.embedding = self._init_embedding(lang, embed_size)
+        self.embedding, self.lang = self._init_embedding(lang, embed_size)
+        logging.info('dict generated! dict size:{0}'.format(self.lang.word_size))
         self.lstm = nn.LSTM(embed_size, hidden_size // 2, num_layers=self.num_layers, batch_first=True,
                                 bidirectional=True)#, dropout=self.dropout)
         self.linear = nn.Linear(hidden_size, label_size)
+        self.context_linear = nn.Linear(hidden_size, hidden_size)
         self.softmax = nn.LogSoftmax(dim=1)
         self.loss = nn.NLLLoss()
         self.attn = nn.Sequential(
@@ -165,16 +184,23 @@ class LSTMNet(nn.Module):
     def forward(self, input, labels=None):
         input = self.embedding(input).unsqueeze(0)
         h_t, _ = self.lstm(input)  # (b_s, m_l, h_s)
-        h_t_ = torch.sum(h_t, dim=1) / h_t.size()[1]
-        # h_t_ = h_t[:,-1,:].squeeze(1)  # 仅用最后的向量
-        y_t = self.softmax(self.linear(h_t_))
+        # 平均化向量
+        # h_t_ = torch.sum(h_t, dim=1) / h_t.size()[1]
+        # 仅用最后的向量
+        # h_t_ = h_t[:,-1,:].squeeze(1)
 
-        # context = torch.rand([1,1,300], device=device_cuda)  # 初始化零向量 0.268
-        # context_extend = torch.cat([context] * h_t.size()[1], dim=1)  # (b_s, m_l, h_s)
-        # score = self.attn(torch.cat((h_t, context_extend), dim=2))  # (b_s, m_l, 1)
-        # attn = self.softmax(score.squeeze(2)).unsqueeze(2)
-        # h_t_ = torch.sum(h_t * attn, dim=1)
-        # y_t = self.softmax(self.linear(h_t_))
+        # 引入context做attn
+        # 初始化随机向量
+        context = torch.rand([1,1,300], device=device_cuda)  # 0.899
+        # context = self.context_linear(context)  # 0.880
+        # 初始化零向量
+        # context = torch.zeros([1,1,300], device=device_cuda)  # 0.865
+        context_extend = torch.cat([context] * h_t.size()[1], dim=1)  # (b_s, m_l, h_s)
+        score = self.attn(torch.cat((h_t, context_extend), dim=2))  # (b_s, m_l, 1)
+        attn = self.softmax(score.squeeze(2)).unsqueeze(2)
+        h_t_ = torch.sum(h_t * attn, dim=1)
+
+        y_t = self.softmax(self.linear(h_t_))
 
         if self.training:
             loss = self.loss(y_t, labels.unsqueeze(0))
@@ -190,7 +216,10 @@ class LSTMNet(nn.Module):
             t = open('pretrained', 'rb')
             embeddings = pickle.load(t)
             t.close()
-            return nn.Embedding.from_pretrained(torch.tensor(embeddings, device=device_cuda), freeze=True)
+            if os.path.exists('lang'):
+                with open('lang', 'rb') as l:
+                    lang = pickle.load(l)
+            return nn.Embedding.from_pretrained(torch.tensor(embeddings, device=device_cuda), freeze=True), lang
         else:
             if os.path.isfile('sgns_merge'):
                 print("Loading pretrained embeddings...")
@@ -198,12 +227,17 @@ class LSTMNet(nn.Module):
 
                 def get_coefs(word, *arr):
                     return word, np.asarray(arr, dtype=np.float32)
-
-                embeddings_dict = dict(get_coefs(*o.rstrip().rsplit(' ')) for o in open('sgns_merge', encoding='utf-8') if
+                embeddings_dict = collections.OrderedDict(get_coefs(*o.rstrip().rsplit(' ')) for o in open('sgns_merge', encoding='utf-8') if
                                        len(o.rstrip().rsplit(' ')) != 2)
-                print (len(embeddings_dict))
+                embeddings_words = [word for word in embeddings_dict.keys()]
+                #print (embeddings_word[:500]);exit()
+                #print (len(embeddings_dict))
 
                 # print 'no pretrained: '
+                '''
+                # 泄露词汇
+                for (word, i) in embeddings_dict:
+                    pass
                 embeddings = np.random.randn(lang.word_size, embed_size).astype(np.float32)
                 for word, i in lang.word2index.items():
                     embedding_vector = embeddings_dict.get(word)
@@ -212,6 +246,28 @@ class LSTMNet(nn.Module):
                         print('in: ', word)
                     else:
                         print('out: ', word)
+                '''
+
+                #embeddings = np.random.randn(lang.word_size, embed_size).astype(np.float32)
+                # 在这里取大词典前5000个和train的交集
+                for word in embeddings_words[:5000]:
+                    if word in lang.word2index.keys():
+                        pass
+                    else:
+                        lang.addWord(word)
+                print (lang.word_size)
+                with open('lang', 'wb') as l:
+                    pickle.dump(lang, l)
+                embeddings = np.random.randn(lang.word_size, embed_size).astype(np.float32)
+                for word, i in lang.word2index.items():
+                    embedding_vector = embeddings_dict.get(word)
+                    if embedding_vector is not None:
+                        embeddings[i] = embedding_vector
+                        #print('in: ', word)
+                    else:
+                        pass
+                        #print ('out:', word)
+
                 print("took {:.2f} seconds\n".format(time.time() - start))
 
                 t = open('pretrained', 'wb')
@@ -239,6 +295,7 @@ class Lang:
         self.index2word = ["<PAD>", "<UNK>",]
         self.word_size = 2
         self.n_words_for_decoder = self.word_size
+        #self.stop_word = stopword
 
     def addSentence(self, sentence):
         for word in sentence:
@@ -274,6 +331,7 @@ def tokenize(data_dict, run_place, data_type='train'):
     :param data:
     :return:
     '''
+    '''
     if (run_place == 'local') | (run_place=='coda'):
         data = ''
         for i in range(len(data_dict)):  # item in data:
@@ -294,7 +352,13 @@ def tokenize(data_dict, run_place, data_type='train'):
         with open('data/'+data_type + '_tokenized.txt', 'r', encoding='utf8') as ft:
             querys = ft.readlines()  # 已经分过词
         return querys
-
+    '''
+    querys = []
+    for i in range(len(data_dict)):  # item in data:
+        query = data_dict[str(i)]['query']
+        token = jieba.cut(query)
+        querys.append('\t'.join(token))
+    return querys
 
 
 
