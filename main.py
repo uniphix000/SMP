@@ -172,7 +172,7 @@ class LSTMNet(nn.Module):
         self.linear = nn.Linear(hidden_size, label_size)
         self.context_linear = nn.Linear(hidden_size, hidden_size)
         self.softmax = nn.LogSoftmax(dim=1)
-        self.loss = nn.NLLLoss()
+        self.loss = nn.NLLLoss() nn.CrossEntropyLoss
         self.attn = nn.Sequential(
             nn.Linear(self.hidden_size * 2, self.embed_size),
             nn.Tanh(),
